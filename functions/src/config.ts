@@ -1,9 +1,9 @@
 export const config = {
   geminiAPIKey:
-    process.env.GEMINI_API_KEY || 'AIzaSyDZe9-f4VgLpRJ2KqJY7mU7f1ta8ynwBII',
+    process.env.GEMINI_API_KEY || '',
   geminiModel: 'gemini-pro',
-  contextWindowDays: 2,
-  maxSuggestionLength: 50,
+  contextWindowDays: 1,
+  maxSuggestionLength: 100,
 };
 
 if (!config.geminiAPIKey) {

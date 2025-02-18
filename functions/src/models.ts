@@ -1,11 +1,11 @@
-import {Timestamp} from 'firebase/firestore';
-
+import {firestore} from 'firebase-admin';
+import * as functions from 'firebase-functions';
 // Firestore Document Interfaces
 export interface ChatMessage {
   id: string;
   sender: string;
   text: string;
-  timestamp: Timestamp;
+  timestamp: firestore.Timestamp;
   suggestedReplies?: string[];
   refinedMessage?: string;
   reminder?: string;
@@ -17,7 +17,7 @@ export interface ChatContext {
   chatId: string;
   userId: string;
   summary: string;
-  timestamp: Timestamp;
+  timestamp: firestore.Timestamp;
   reminded?: boolean;
   relevantMessageId?: string;
 }
@@ -27,7 +27,7 @@ export interface ChatContext {
  * @param {Timestamp} timestamp - The Firestore timestamp to format.
  * @return {string} The formatted timestamp string.
  */
-export function formatTimestamp(timestamp: Timestamp): string {
+export function formatTimestamp(timestamp: firestore.Timestamp): string {
   const date = timestamp.toDate();
   return date.toLocaleString(); // Adjust formatting as needed
 }
@@ -39,9 +39,12 @@ export function formatTimestamp(timestamp: Timestamp): string {
  * false otherwise.
  */
 export function isImportantMessage(text: string): boolean {
-  const keywords = ['promise', 'will do', "I'll get", 'I will', 'remind me'];
+  const keywords = ['promise',
+    'will do', "I'll get", 'I will', 'remind me', 'of course', 'indeed'];
   const lowerText = text.toLowerCase();
-  return keywords.some((keyword) => lowerText.includes(keyword));
+  const isImportant = keywords.some((keyword) => lowerText.includes(keyword));
+  functions.logger.info('isImportantMessage:', {text, isImportant}); // LOG THIS
+  return isImportant;
 }
 
 /**

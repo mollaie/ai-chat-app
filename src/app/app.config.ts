@@ -8,11 +8,13 @@ import { getFirestore, provideFirestore } from '@angular/fire/firestore';
 import { getFunctions, provideFunctions } from '@angular/fire/functions';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { setLogLevel, LogLevel } from '@angular/fire';
+import { provideHttpClient } from '@angular/common/http';
 
 setLogLevel(LogLevel.VERBOSE);
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
+    provideHttpClient(),
     provideRouter(routes),
     provideFirebaseApp(() =>
       initializeApp({

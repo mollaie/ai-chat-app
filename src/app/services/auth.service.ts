@@ -71,4 +71,12 @@ export class AuthService {
       ? (userSnap.data() as { id: string; name: string; avatar?: string })
       : null;
   }
+
+  async getCurrentUserToken() {
+    const user = this.currentUser.value || this.auth.currentUser;
+    if (!user) {
+      return null;
+    }
+    return user.getIdToken();
+   }
 }

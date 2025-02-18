@@ -1,9 +1,11 @@
 // functions/src/context.ts
 
+import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import {ChatContext, isImportantMessage, formatTimestamp} from './models';
 import {config} from './config';
-import {serverTimestamp} from 'firebase/firestore';
+import {firestore} from 'firebase-admin';
+const serverTimestamp = firestore.FieldValue.serverTimestamp;
 
 const db = admin.firestore();
 
@@ -21,21 +23,27 @@ export async function getRelevantContext(
   const contextRef = db.collection('chatContext');
   const now = new Date();
   const past = new Date(now.setDate(now.getDate() - config.contextWindowDays));
+  functions.logger.info('getRelevantContext: Querying with:', {
+    chatId,
+    currentUserId,
+    past,
+  }); // LOG THIS
   const snapshot = await contextRef
     .where('chatId', '==', chatId)
     .where('userId', '!=', currentUserId)
     // Get context related to the *other* user
     .where('timestamp', '>=', past)
-    .where('reminded', '!=', true) // Avoid repeated reminders.
     .orderBy('timestamp', 'desc')
     .get();
 
   let contextString = '';
   snapshot.forEach((doc) => {
     const context = doc.data() as ChatContext;
-    contextString += `On ${formatTimestamp(context.timestamp)}, ${
-      context.userId
-    } mentioned: ${context.summary}\n`;
+    if (context.reminded !== true) {
+      contextString += `On ${formatTimestamp(context.timestamp)}, ${
+        context.userId
+      } mentioned: ${context.summary}\n`;
+    }
   });
 
   return contextString;

@@ -13,11 +13,12 @@ import {
   updateDoc,
   where,
 } from '@angular/fire/firestore';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, lastValueFrom } from 'rxjs';
 import { Chat } from '../interfaces/chat.interface';
 import { User } from '../interfaces/user.interface';
 import { Message } from '../interfaces/message.interface';
 import { AuthService } from './auth.service';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 @Injectable({
   providedIn: 'root',
@@ -25,6 +26,7 @@ import { AuthService } from './auth.service';
 export class ChatService {
   private firestore = inject(Firestore);
   private authService = inject(AuthService);
+  private http = inject(HttpClient);
 
   private chatsCollection = collection(this.firestore, 'chats');
   private messagesCollection = collection(this.firestore, 'messages');
@@ -165,6 +167,9 @@ export class ChatService {
               : new Date(data.timestamp),
           isMine: isMine,
           chatId: data.chatId,
+          suggestedReplies: data.suggestedReplies,
+          refinedMessage: data.refinedMessage,
+          reminder: data.reminder,
         };
       });
 
@@ -228,6 +233,45 @@ export class ChatService {
       console.log(chatList);
       this.chats.next(chatList);
     });
+  }
+
+  async updateMessage(chatId: string, messageId: string, newText: string) {
+    const messageRef = doc(this.messagesCollection, messageId);
+    await updateDoc(messageRef, { text: newText, refinedMessage: null });
+  }
+
+  async getRefinedMessage(
+    chatId: string,
+    text: string
+  ): Promise<string | null> {
+    const token = await this.authService.getCurrentUserToken(); // Get the ID token
+    if (!token) {
+      console.error('User not logged in.');
+      return null;
+    }
+
+    // Use the function URL (you'll get this from the Firebase console or after deployment)
+    const functionUrl =
+      'https://europe-west1-angular-ai-chat-app.cloudfunctions.net/getRefinedMessage'; // Replace with your function URL
+
+    try {
+      const response = await lastValueFrom(this.http
+        .post<{ refinedMessage: string | null }>(
+          functionUrl,
+          { chatId, text }, // Send data as JSON in the request body
+          {
+            headers: new HttpHeaders({
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`, // Include the token in the Authorization header
+            }),
+          }
+        )
+      ); // Use toPromise() to convert the Observable to a Promise
+      return response?.refinedMessage || null;
+    } catch (error) {
+      console.error('Error calling getRefinedMessage:', error);
+      return null;
+    }
   }
 
   /** Select a chat */

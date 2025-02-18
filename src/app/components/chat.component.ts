@@ -1,4 +1,4 @@
-import { Component, inject, Input, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, Input, OnDestroy, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
@@ -8,6 +8,7 @@ import { Message } from '../interfaces/message.interface';
 import { ChatService } from '../services/chat.service';
 import { Chat } from '../interfaces/chat.interface';
 import { AuthService } from '../services/auth.service';
+import { debounceTime, distinctUntilChanged, of, Subject, switchMap, takeUntil } from 'rxjs';
 @Component({
   selector: 'app-chat',
   template: `
@@ -18,18 +19,43 @@ import { AuthService } from '../services/auth.service';
 
       <div class="chat-messages">
         @for (msg of messages(); track $index) {
-        <div [ngClass]="{ mine: msg.isMine, theirs: !msg.isMine }">
+        <div
+          class="message"
+          [class.mine]="msg.isMine"
+          [class.theirs]="!msg.isMine"
+        >
           <p>{{ msg.text }}</p>
-          <span>{{ msg.timestamp | date : 'shortTime' }}</span>
+
+          @if (msg.reminder) {
+          <div class="reminder">🔔 {{ msg.reminder }}</div>
+          } @if (msg.suggestedReplies && !msg.isMine) {
+          <div class="suggested-replies">
+            @for (reply of msg.suggestedReplies; track $index) {
+            <button (click)="insertSuggestion(reply)">{{ reply }}</button>
+            }
+          </div>
+          }
+
+          <span class="timestamp">{{
+            msg.timestamp | date : 'shortTime'
+          }}</span>
         </div>
         }
       </div>
+
+      @if (refinedMessage()) {
+      <div class="refined-message-option">
+        ✨ Suggested Refinement: <span>{{ refinedMessage() }}</span>
+      </div>
+      }
 
       <div class="chat-input">
         <input
           matInput
           placeholder="Type a message..."
-          [(ngModel)]="newMessage"
+          [(ngModel)]="newMessageText"
+          (ngModelChange)="inputText$.next($event)"
+          (keyup.enter)="sendMessage()"
         />
         <button mat-icon-button color="primary" (click)="sendMessage()">
           <mat-icon>send</mat-icon>
@@ -110,6 +136,43 @@ import { AuthService } from '../services/auth.service';
           color: #fff;
         }
       }
+
+      .refined-message-option {
+        background-color: #2a2a2a; /* Darker background */
+        padding: 5px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+      }
+      .refined-message-option button {
+        background-color: transparent;
+        border: none;
+        color: #fff;
+      }
+
+      .reminder {
+        font-size: 0.8em;
+        color: #aaa;
+        margin-bottom: 5px;
+      }
+
+      .suggested-replies {
+        display: flex;
+        flex-wrap: wrap; /* Allow replies to wrap */
+        margin-top: 5px;
+      }
+
+      .suggested-replies button {
+        background-color: #333;
+        color: white;
+        border: none;
+        border-radius: 15px; /* Rounded buttons */
+        padding: 5px 10px;
+        margin-right: 5px;
+        margin-bottom: 5px; /* Space between buttons */
+        cursor: pointer;
+      }
     `,
   ],
   imports: [
@@ -120,17 +183,43 @@ import { AuthService } from '../services/auth.service';
     MatIconModule,
   ],
 })
-export class ChatComponent implements OnInit {
+export class ChatComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
 
   @Input() chat!: Chat;
   messages = signal<Message[]>([]);
-  newMessage = '';
+  newMessageText: string = '';
+  refinedMessage: WritableSignal<string | null> = signal(null); // Signal for refined message
 
   private chatService = inject(ChatService);
+  private destroy$ = new Subject<void>();
+   inputText$ = new Subject<string>();
 
   ngOnInit() {
-    this.chatService.getChatMessages(this.chat.id, (messages: Message[]) => {
+    if (this.chat) {
+      this.loadMessages(this.chat.id);
+    }
+
+    // Debounce the input text changes and call getRefinedMessage
+    this.inputText$
+      .pipe(
+        debounceTime(500), // Wait for 500ms pause in typing
+        distinctUntilChanged(), // Only if the text has actually changed
+        takeUntil(this.destroy$), // Unsubscribe when component is destroyed
+        switchMap((text) => {
+          // Only call if there's text and a chat selected.  Return 'of(null)' to clear previous result.
+          return this.chat && text.trim()
+            ? this.chatService.getRefinedMessage(this.chat.id, text)
+            : of(null);
+        })
+      )
+      .subscribe((refinedText) => {
+        this.refinedMessage.set(refinedText); // Update the signal
+      });
+  }
+
+  loadMessages(chatId: string) {
+    this.chatService.getChatMessages(chatId, (messages) => {
       this.messages.set(messages);
     });
   }
@@ -141,9 +230,20 @@ export class ChatComponent implements OnInit {
       console.error('No user logged in!');
       return;
     }
-    if (this.newMessage.trim() && this.chat) {
-      this.chatService.sendMessage(this.chat.id, userId, this.newMessage);
-      this.newMessage = '';
+    // Send the message if newMessageText not empty
+    if (this.newMessageText.trim() && this.chat) {
+      this.chatService.sendMessage(this.chat.id, userId, this.newMessageText);
+      this.newMessageText = ''; // Clear input field after sending
+      this.refinedMessage.set(null); // Clear refined message after sending
     }
+  }
+
+  insertSuggestion(suggestion: string) {
+    this.newMessageText = suggestion;
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next(); // Unsubscribe from observables
+    this.destroy$.complete();
   }
 }
